@@ -46,12 +46,33 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
+def _cors_headers_for(request: Request) -> dict[str, str]:
+    """Starlette's ServerErrorMiddleware sits OUTSIDE CORSMiddleware, so a response
+    built by an `Exception`-level handler (as opposed to a normal route response)
+    never passes through CORSMiddleware and ships with no CORS headers — the
+    browser then reports a CORS failure instead of surfacing our clean 500, which
+    is exactly what a real cross-origin smoke test caught. Recompute the same
+    headers CORSMiddleware would have added, for this response only."""
+    origin = request.headers.get("origin")
+    if origin and origin in settings.cors_origins:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
+    return {}
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     # Never leak stack traces or internal errors — especially with PHI in
     # request bodies/context — into an HTTP response.
     logger.error("unhandled_exception", path=request.url.path, error_type=type(exc).__name__)
-    return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content={"detail": "Internal server error"})
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal server error"},
+        headers=_cors_headers_for(request),
+    )
 
 
 @app.exception_handler(HTTPException)

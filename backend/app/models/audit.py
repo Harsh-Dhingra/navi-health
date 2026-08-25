@@ -15,7 +15,11 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    # ON DELETE SET NULL: account deletion (app/api/routes/account.py) must be able to
+    # remove the user row while the audit trail of that deletion itself survives.
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)  # agent_action, escalation, safety_flag
     agent_name: Mapped[str] = mapped_column(String(100), nullable=True)

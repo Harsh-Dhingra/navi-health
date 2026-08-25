@@ -40,7 +40,12 @@ export default function ChatInterface() {
         },
       ]);
     } catch (err) {
-      setError("NAVI couldn't process that request. Please sign in and try again.");
+      const message = err instanceof Error ? err.message : "";
+      setError(
+        message.startsWith("401")
+          ? "Your session expired — please sign in again."
+          : "NAVI couldn't process that request. Please try again in a moment."
+      );
     } finally {
       setLoading(false);
     }
