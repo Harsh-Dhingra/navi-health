@@ -14,6 +14,26 @@ defaults:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Real pgvector-enabled Postgres — the graph-integration tests
+        # exercise the actual RAG retriever's vector query and the real
+        # alembic migrations, not a sqlite stand-in.
+        image: ankane/pgvector:latest
+        env:
+          POSTGRES_USER: navi
+          POSTGRES_PASSWORD: navi
+          POSTGRES_DB: navi_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg2://navi:navi@localhost:5432/navi_test
+      JWT_SECRET: ci-test-secret-not-for-production
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +51,15 @@ jobs:
 
       - name: Compile check
         run: python -m py_compile $(find app alembic -name "*.py")
+
+      - name: Generate field encryption key
+        run: echo "FIELD_ENCRYPTION_KEYS=$(python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> "$GITHUB_ENV"
+
+      - name: Enable pgvector extension
+        run: PGPASSWORD=navi psql -h localhost -U navi -d navi_test -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+      - name: Run migrations
+        run: alembic upgrade head
 
       - name: Test
         run: python -m pytest -q
