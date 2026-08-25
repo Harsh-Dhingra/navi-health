@@ -22,3 +22,4 @@ class ChatResponse(BaseModel):
     steps: list[AgentStep]
     safety_flags: list[str] = []
     escalated: bool = False
+    contains_simulated_data: bool = False

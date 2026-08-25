@@ -1,11 +1,12 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, String, Text
+from sqlalchemy import JSON, Date, DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
+from app.core.crypto import EncryptedString
 from app.db.session import Base
 
 
@@ -18,8 +19,8 @@ class Visit(Base):
     provider_name: Mapped[str] = mapped_column(String(255), nullable=True)
     visit_type: Mapped[str] = mapped_column(String(100), nullable=True)
     visit_date: Mapped[date] = mapped_column(Date, nullable=True)
-    reason: Mapped[str] = mapped_column(String(500), nullable=True)
-    notes: Mapped[str] = mapped_column(Text, nullable=True)
+    reason: Mapped[str] = mapped_column(EncryptedString(1500), nullable=True)
+    notes: Mapped[str] = mapped_column(EncryptedString(8000), nullable=True)
 
     # FHIR R4 Encounter resource
     fhir_encounter: Mapped[dict] = mapped_column(JSON, default=dict)

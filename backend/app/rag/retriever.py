@@ -15,7 +15,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.claim import Claim, ExplanationOfBenefits
+from app.models.claim import Claim
 from app.models.document_chunk import DocumentChunk
 from app.models.insurance import InsurancePolicy
 from app.models.medication import Medication

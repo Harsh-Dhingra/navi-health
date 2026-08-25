@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.agents import prompts
 from app.agents.domain_tools import (
     check_prior_authorization_requirement,
+    check_provider_network_status,
     estimate_procedure_cost,
     search_in_network_providers,
 )
@@ -33,7 +34,12 @@ from app.core.config import get_settings
 from app.rag.retriever import HealthContextRetriever
 
 AGENT_ORDER = ["insurance", "provider", "cost", "authorization"]
-ALL_TOOLS = [search_in_network_providers, estimate_procedure_cost, check_prior_authorization_requirement]
+ALL_TOOLS = [
+    search_in_network_providers,
+    check_provider_network_status,
+    estimate_procedure_cost,
+    check_prior_authorization_requirement,
+]
 TOOLS_BY_NAME = {t.name: t for t in ALL_TOOLS}
 
 AGENT_PROMPTS = {
@@ -92,7 +98,8 @@ def _run_domain_agent(state: NaviState, *, db: Session, scope: str, agent_label:
     else:
         summary = ai_message.content
 
-    result = {"summary": summary, "tool_results": tool_results}
+    contains_simulated_data = any(isinstance(r, dict) and r.get("data_source") == "simulated" for r in tool_results)
+    result = {"summary": summary, "tool_results": tool_results, "contains_simulated_data": contains_simulated_data}
     step = {
         "agent_name": agent_label,
         "step_type": scope,
@@ -103,18 +110,25 @@ def _run_domain_agent(state: NaviState, *, db: Session, scope: str, agent_label:
     return {f"{scope}_result": result, "completed_steps": [step]}
 
 
+SIMULATED_DATA_DISCLAIMER = (
+    "Note: some figures above (cost, network status, or prior-authorization details) are from "
+    "NAVI's demo/simulation mode, not a live check with your insurer. Confirm before relying on them."
+)
+
+
 def safety_node(state: NaviState) -> dict:
-    llm = _get_llm()
-    payload = json.dumps(
-        {
-            "intent": state.get("intent"),
-            "insurance_result": state.get("insurance_result"),
-            "provider_result": state.get("provider_result"),
-            "cost_result": state.get("cost_result"),
-            "authorization_result": state.get("authorization_result"),
-        },
-        default=str,
+    domain_results = {
+        "insurance_result": state.get("insurance_result"),
+        "provider_result": state.get("provider_result"),
+        "cost_result": state.get("cost_result"),
+        "authorization_result": state.get("authorization_result"),
+    }
+    contains_simulated_data = any(
+        isinstance(r, dict) and r.get("contains_simulated_data") for r in domain_results.values()
     )
+
+    llm = _get_llm()
+    payload = json.dumps({"intent": state.get("intent"), **domain_results}, default=str)
     response = llm.invoke([SystemMessage(prompts.SAFETY_SYSTEM_PROMPT), HumanMessage(payload)])
     try:
         parsed = _extract_json(response.content)
@@ -125,17 +139,22 @@ def safety_node(state: NaviState) -> dict:
             "final_response": "I wasn't able to safely verify this response — routing to a human specialist.",
         }
 
+    final_response = parsed.get("final_response") or ""
+    if contains_simulated_data and SIMULATED_DATA_DISCLAIMER not in final_response:
+        final_response = f"{final_response}\n\n{SIMULATED_DATA_DISCLAIMER}".strip()
+
     step = {
         "agent_name": "safety_agent",
         "step_type": "safety_review",
         "status": "completed",
-        "data": {"flags": parsed.get("flags", [])},
+        "data": {"flags": parsed.get("flags", []), "contains_simulated_data": contains_simulated_data},
         "requires_human_review": parsed.get("requires_human_review", False),
     }
     return {
         "safety_flags": parsed.get("flags", []),
         "requires_human_review": parsed.get("requires_human_review", False),
-        "final_response": parsed.get("final_response"),
+        "final_response": final_response,
+        "contains_simulated_data": contains_simulated_data,
         "completed_steps": [step],
     }
 

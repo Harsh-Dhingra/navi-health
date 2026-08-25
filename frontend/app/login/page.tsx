@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, setToken } from "@/lib/api";
+import { api } from "@/lib/api";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -18,9 +18,9 @@ export default function LoginPage() {
     try {
       if (mode === "register") {
         await api.register(email, password, fullName);
+      } else {
+        await api.login(email, password);
       }
-      const { access_token } = await api.login(email, password);
-      setToken(access_token);
       router.push("/");
     } catch (err) {
       setError("Could not authenticate. Check your credentials and that the backend is running.");
@@ -53,11 +53,13 @@ export default function LoginPage() {
         <input
           type="password"
           required
+          minLength={mode === "register" ? 12 : undefined}
           className="w-full rounded-lg border border-slate-300 px-4 py-2 text-sm"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        {mode === "register" && <p className="text-xs text-slate-400">At least 12 characters.</p>}
         {error && <p className="text-sm text-red-500">{error}</p>}
         <button
           type="submit"

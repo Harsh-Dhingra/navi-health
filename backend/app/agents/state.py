@@ -24,6 +24,7 @@ class NaviState(TypedDict):
     # Safety agent output
     safety_flags: list[str]
     requires_human_review: bool
+    contains_simulated_data: bool
 
     # Bookkeeping
     completed_steps: Annotated[list[dict[str, Any]], operator.add]

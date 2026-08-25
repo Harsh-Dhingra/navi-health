@@ -1,13 +1,14 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from langchain_core.messages import HumanMessage
 from sqlalchemy.orm import Session
 
 from app.agents.graph import build_navi_graph
 from app.api.deps import get_current_user
+from app.core.audit import log_audit_event
+from app.core.rate_limit import limiter
 from app.db.session import get_db
-from app.models.audit import AuditLog
 from app.models.care_journey import CareJourney, CareJourneyStep
 from app.models.user import User
 from app.schemas.chat import AgentStep, ChatRequest, ChatResponse
@@ -16,14 +17,25 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 @router.post("", response_model=ChatResponse)
-def send_message(payload: ChatRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+@limiter.limit("20/minute")
+def send_message(
+    request: Request, payload: ChatRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     if payload.journey_id:
         journey = db.get(CareJourney, uuid.UUID(payload.journey_id))
+        if not journey or journey.user_id != user.id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Care journey not found")
     else:
         journey = CareJourney(user_id=user.id, title=payload.message[:80], original_request=payload.message)
         db.add(journey)
         db.commit()
         db.refresh(journey)
+
+    log_audit_event(
+        db, user_id=user.id, event_type="agent_invocation",
+        description="Chat request routed through NAVI agent graph",
+        metadata={"journey_id": str(journey.id)},
+    )
 
     graph = build_navi_graph(db)
     result = graph.invoke(
@@ -39,6 +51,7 @@ def send_message(payload: ChatRequest, db: Session = Depends(get_db), user: User
             "authorization_result": None,
             "safety_flags": [],
             "requires_human_review": False,
+            "contains_simulated_data": False,
             "completed_steps": [],
             "final_response": None,
         }
@@ -59,14 +72,10 @@ def send_message(payload: ChatRequest, db: Session = Depends(get_db), user: User
 
     if result.get("requires_human_review"):
         journey.status = "escalated"
-        db.add(
-            AuditLog(
-                user_id=user.id,
-                event_type="escalation",
-                agent_name="safety_agent",
-                description="Safety agent escalated journey to human review",
-                event_metadata={"flags": result.get("safety_flags", [])},
-            )
+        log_audit_event(
+            db, user_id=user.id, event_type="escalation", agent_name="safety_agent",
+            description="Safety agent escalated journey to human review",
+            metadata={"flags": result.get("safety_flags", []), "journey_id": str(journey.id)},
         )
     else:
         journey.status = "completed"
@@ -89,4 +98,5 @@ def send_message(payload: ChatRequest, db: Session = Depends(get_db), user: User
         ],
         safety_flags=result.get("safety_flags", []),
         escalated=result.get("requires_human_review", False),
+        contains_simulated_data=result.get("contains_simulated_data", False),
     )

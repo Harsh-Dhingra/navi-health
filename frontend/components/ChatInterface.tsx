@@ -8,6 +8,7 @@ type Message = {
   text: string;
   steps?: AgentStep[];
   escalated?: boolean;
+  containsSimulatedData?: boolean;
 };
 
 export default function ChatInterface() {
@@ -30,7 +31,13 @@ export default function ChatInterface() {
       setJourneyId(response.journey_id);
       setMessages((prev) => [
         ...prev,
-        { role: "navi", text: response.reply, steps: response.steps, escalated: response.escalated },
+        {
+          role: "navi",
+          text: response.reply,
+          steps: response.steps,
+          escalated: response.escalated,
+          containsSimulatedData: response.contains_simulated_data,
+        },
       ]);
     } catch (err) {
       setError("NAVI couldn't process that request. Please sign in and try again.");
@@ -56,6 +63,12 @@ export default function ChatInterface() {
             >
               {message.text}
             </div>
+            {message.containsSimulatedData && (
+              <div className="mt-2 inline-block rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-left text-xs text-amber-800">
+                ⚠ Some figures above are from NAVI&apos;s demo/simulation mode, not a live check with your
+                insurer — confirm before relying on them.
+              </div>
+            )}
             {message.steps && message.steps.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {message.steps.map((step, stepIndex) => (

@@ -14,6 +14,7 @@ export type ChatResponse = {
   steps: AgentStep[];
   safety_flags: string[];
   escalated: boolean;
+  contains_simulated_data: boolean;
 };
 
 export type CareJourney = {
@@ -26,46 +27,51 @@ export type CareJourney = {
   steps: AgentStep[];
 };
 
-function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem("navi_token");
-}
+export type CurrentUser = {
+  id: string;
+  email: string;
+  full_name: string | null;
+};
 
-export function setToken(token: string) {
-  window.localStorage.setItem("navi_token", token);
-}
-
-export function clearToken() {
-  window.localStorage.removeItem("navi_token");
-}
-
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
+// Auth lives entirely in httpOnly, Secure, SameSite cookies set by the backend —
+// never in localStorage/sessionStorage, which any injected script could read.
+// `credentials: "include"` sends/receives those cookies on every request.
+async function request<T>(path: string, options: RequestInit = {}, retrying = false): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
   });
+
+  if (response.status === 401 && !retrying) {
+    const refreshed = await fetch(`${API_BASE_URL}/api/auth/refresh`, { method: "POST", credentials: "include" });
+    if (refreshed.ok) {
+      return request<T>(path, options, true);
+    }
+  }
 
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`${response.status}: ${body}`);
   }
+  if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
 
 export const api = {
   register: (email: string, password: string, full_name?: string) =>
-    request("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, full_name }) }),
+    request<CurrentUser>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, full_name }) }),
 
   login: (email: string, password: string) =>
-    request<{ access_token: string; token_type: string }>("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    }),
+    request<CurrentUser>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+
+  logout: () => request<void>("/api/auth/logout", { method: "POST" }),
+
+  deleteAccount: (password: string) =>
+    request<void>("/api/account", { method: "DELETE", body: JSON.stringify({ password }) }),
 
   sendMessage: (message: string, journey_id?: string) =>
     request<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify({ message, journey_id }) }),

@@ -5,19 +5,21 @@ from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.models.insurance import InsurancePolicy
 from app.models.medication import Medication
+from app.models.refresh_token import RefreshToken
 from app.models.user import User
 from app.models.visit import Visit
 
 __all__ = [
-    "User",
-    "InsurancePolicy",
-    "Claim",
-    "ExplanationOfBenefits",
-    "Medication",
-    "Visit",
+    "AuditLog",
     "CareJourney",
     "CareJourneyStep",
+    "Claim",
     "Document",
     "DocumentChunk",
-    "AuditLog",
+    "ExplanationOfBenefits",
+    "InsurancePolicy",
+    "Medication",
+    "RefreshToken",
+    "User",
+    "Visit",
 ]

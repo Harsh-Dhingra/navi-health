@@ -10,7 +10,9 @@ import uuid
 from typing import Any
 
 
-def build_coverage_resource(*, payer_name: str, member_id: str, group_number: str | None, plan_name: str | None) -> dict[str, Any]:
+def build_coverage_resource(
+    *, payer_name: str, member_id: str, group_number: str | None, plan_name: str | None
+) -> dict[str, Any]:
     return {
         "resourceType": "Coverage",
         "id": str(uuid.uuid4()),

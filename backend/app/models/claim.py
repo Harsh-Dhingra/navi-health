@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
+from app.core.crypto import EncryptedString
 from app.db.session import Base
 
 
@@ -18,7 +19,7 @@ class Claim(Base):
         UUID(as_uuid=True), ForeignKey("insurance_policies.id"), nullable=True
     )
 
-    claim_number: Mapped[str] = mapped_column(String(100), nullable=True)
+    claim_number: Mapped[str] = mapped_column(EncryptedString(500), nullable=True)
     provider_name: Mapped[str] = mapped_column(String(255), nullable=True)
     service_date: Mapped[date] = mapped_column(Date, nullable=True)
     billed_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=True)

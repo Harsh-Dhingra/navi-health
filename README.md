@@ -52,21 +52,53 @@ confident. No autonomous clinical decision-making.
 | Document intelligence | OCR (Tesseract), layout-aware parsing, FHIR R4 |
 | Frontend | Next.js (App Router), TypeScript, Tailwind CSS |
 
+## Production hardening
+
+This isn't just a demo scaffold — it's built to handle real PHI, with the caveats in
+[Status](#status) below:
+
+- **Encryption**: PHI columns (member IDs, claim numbers, visit notes, OCR'd document
+  text) are encrypted at the field level with Fernet, on top of transport/disk
+  encryption — see [`app/core/crypto.py`](backend/app/core/crypto.py).
+- **Auth**: httpOnly/Secure session cookies (not localStorage), short-lived access
+  tokens with rotating/revocable refresh tokens, bcrypt password hashing, and account
+  lockout after repeated failed logins.
+- **Real provider data**: provider search hits the live, public CMS NPI Registry — no
+  contract required. Network status, cost estimates, and prior-auth checks go through
+  a pluggable `EligibilityProvider` (mock by default) — see
+  [`app/integrations/`](backend/app/integrations/). Every result is tagged
+  `data_source`, and the safety agent forces a visible disclaimer into its reply
+  whenever any figure shown to a member is simulated rather than real.
+- **Defense in depth**: per-IP rate limiting, upload validation (type/size/filename
+  sanitization), ownership checks on every resource, structured logs with automatic
+  PHI redaction, an append-only audit log, and a right-to-deletion endpoint.
+- **Ops**: GitHub Actions CI (lint, tests, build) on every push, a Render deployment
+  blueprint ([`render.yaml`](render.yaml)), and a real pytest suite
+  ([`backend/tests/`](backend/tests/)).
+- **Compliance groundwork**: see [`SECURITY.md`](SECURITY.md),
+  [`COMPLIANCE_CHECKLIST.md`](COMPLIANCE_CHECKLIST.md), and
+  [`DEPLOYMENT.md`](DEPLOYMENT.md) for what's implemented vs. what still requires a
+  signed BAA or legal review before this touches real customer data.
+
 ## Project layout
 
 ```
 backend/
   app/
-    agents/       # LangGraph graph, prompts, domain tools, shared state
-    api/routes/    # auth, chat, care journeys, document upload
+    agents/        # LangGraph graph, prompts, domain tools, shared state
+    api/routes/    # auth, account, chat, care journeys, document upload
+    core/          # config, crypto, security, logging, rate limiting, audit
+    integrations/  # real NPI registry client, pluggable eligibility provider
     models/        # SQLAlchemy models (users, policies, claims, journeys, ...)
     rag/           # scoped health-context retriever + embeddings
     services/      # document intelligence (OCR/extraction), FHIR builders
   alembic/         # database migrations
+  tests/           # pytest suite
 frontend/
   app/             # Next.js routes (chat, login, dashboard)
   components/      # ChatInterface, CareJourneyTimeline
-  lib/api.ts       # typed API client
+  lib/api.ts       # typed API client (cookie-based auth)
+legal/             # draft ToS / Privacy Policy / medical disclaimer — NOT final, needs attorney review
 ```
 
 ## Running locally
@@ -74,7 +106,9 @@ frontend/
 ### With Docker
 
 ```bash
-cp backend/.env.example backend/.env   # add your ANTHROPIC_API_KEY
+cp backend/.env.example backend/.env
+# edit backend/.env: set ANTHROPIC_API_KEY and FIELD_ENCRYPTION_KEYS (required — see
+# the comment above it in .env.example for the one-liner that generates a key)
 docker compose up --build
 ```
 
@@ -87,7 +121,7 @@ Frontend: http://localhost:3000 · Backend: http://localhost:8000/api/health
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # add your ANTHROPIC_API_KEY and a running Postgres URL
+cp .env.example .env   # add ANTHROPIC_API_KEY, FIELD_ENCRYPTION_KEYS, and a running Postgres URL
 alembic upgrade head
 uvicorn app.main:app --reload
 
@@ -97,6 +131,19 @@ cp .env.local.example .env.local
 npm install
 npm run dev
 ```
+
+### Running tests
+
+```bash
+cd backend && source .venv/bin/activate
+python -m pytest -q
+ruff check app tests alembic
+```
+
+### Deploying
+
+See [`DEPLOYMENT.md`](DEPLOYMENT.md) — includes the Render setup and, importantly,
+which steps (BAAs, secrets) only a human with account access can do.
 
 ## Privacy
 
@@ -108,11 +155,19 @@ including safety escalations — is written to an append-only audit log
 
 ## Status
 
-Early-stage engineering project. The provider directory, cost estimator, and prior-auth
-checker in `app/agents/domain_tools.py` are currently deterministic mocks with the real
-integration point documented inline (payer eligibility APIs, NPI registry, fee
-schedules) — swapping them for live integrations doesn't require touching the agent
-graph.
+Provider *identity* search is real (CMS NPI Registry). Network status, cost estimates,
+and prior-authorization checks are simulated by default — that data genuinely requires
+a contracted clearinghouse relationship (e.g. Availity), not a public API — but the
+integration point is a drop-in adapter (`app/integrations/eligibility.py`), every
+simulated result is explicitly tagged, and the product visibly discloses it to members
+rather than presenting fabricated coverage/cost data as real.
+
+Before this handles real customer PHI: BAAs must be signed with every vendor that
+touches data (hosting, Anthropic, any embeddings/clearinghouse provider — none of
+these can be signed by an AI agent), and the organizational items in
+[`COMPLIANCE_CHECKLIST.md`](COMPLIANCE_CHECKLIST.md) (risk assessment, designated
+privacy/security officer, incident response plan) need to be completed. See
+[`DEPLOYMENT.md`](DEPLOYMENT.md) for the full checklist.
 
 ## License
 

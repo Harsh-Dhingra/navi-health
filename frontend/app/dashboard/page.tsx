@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { api, CareJourney } from "@/lib/api";
 import CareJourneyTimeline from "@/components/CareJourneyTimeline";
 
 export default function DashboardPage() {
   const [journeys, setJourneys] = useState<CareJourney[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     api
@@ -16,6 +18,11 @@ export default function DashboardPage() {
       .catch(() => setError("Sign in to view your care journeys."));
   }, []);
 
+  async function handleLogout() {
+    await api.logout().catch(() => {});
+    router.push("/login");
+  }
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
       <div className="mb-6 flex items-center justify-between">
@@ -23,9 +30,14 @@ export default function DashboardPage() {
           <h1 className="text-xl font-semibold text-navi-900">Your care journeys</h1>
           <p className="text-sm text-slate-500">Every request NAVI has helped you navigate.</p>
         </div>
-        <Link href="/" className="text-sm font-medium text-navi-600 hover:underline">
-          New request →
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link href="/" className="text-sm font-medium text-navi-600 hover:underline">
+            New request →
+          </Link>
+          <button onClick={handleLogout} className="text-sm font-medium text-slate-400 hover:text-slate-600">
+            Sign out
+          </button>
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-500">{error}</p>}

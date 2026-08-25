@@ -1,0 +1,58 @@
+services:
+  - type: web
+    name: navi-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    healthCheckPath: /api/ready
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: navi-db
+          property: connectionString
+      - key: ANTHROPIC_API_KEY
+        sync: false # set manually in the Render dashboard — never commit real keys
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-5
+      - key: VOYAGE_API_KEY
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FIELD_ENCRYPTION_KEYS
+        sync: false # generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      - key: COOKIE_SECURE
+        value: "true"
+      - key: COOKIE_DOMAIN
+        sync: false # e.g. .yourdomain.com — only if frontend+backend share a custom domain
+      - key: COOKIE_SAMESITE
+        value: none # navi-backend/navi-frontend are separate *.onrender.com subdomains
+        # (cross-site to each other) unless you attach a shared custom domain — see
+        # DEPLOYMENT.md. If you do add app.x.com + api.x.com, switch this to "lax"
+        # and set COOKIE_DOMAIN=.x.com instead.
+      - key: CORS_ORIGINS
+        sync: false # e.g. ["https://app.yourdomain.com"] or the navi-frontend.onrender.com URL
+      - key: ELIGIBILITY_PROVIDER
+        value: mock # switch to "availity" only once you hold real clearinghouse credentials
+      - key: AVAILITY_API_KEY
+        sync: false
+
+  - type: web
+    name: navi-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: starter
+    envVars:
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false # e.g. https://navi-backend.onrender.com
+
+databases:
+  - name: navi-db
+    plan: starter
+    postgresMajorVersion: "16"
+    # After the database is created, run once via the Render Postgres shell
+    # (or psql) before the first deploy: CREATE EXTENSION IF NOT EXISTS vector;
+    # then run `alembic upgrade head` from the backend service shell.
